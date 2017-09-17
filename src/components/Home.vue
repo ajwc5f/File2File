@@ -9,28 +9,40 @@
     </div>-->
     <h1>File2File</h1>
     <p class="lead">Dropbox and Google Drive file transferring.</p>
+    <div class="authArea">
+      <button ref="googleAuthButton" class="btn btn-primary" style="display: none;">Authorize Google Drive</button>
+      <button ref="googleSignoutButton" class="btn btn-danger" style="display: none;">Sign Out of Google Drive</button>
+    </div>
     <h3>Dropbox</h3>
+    <h5>Select files below to be transferred.</h5>
     <div id="dropbox_content" v-if="dropbox_files.length != 0">
-      <select multiple class="form-control" id="dropboxFilesList">
+      <!--<select multiple class="form-control" id="dropboxFilesList">
         <option v-for="file in dropbox_files" v-bind:value="file.id">{{file.name}}</option>
-      </select>
+      </select>-->
+      <multiselect v-model="value" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files" label="name" track-by="name">
+        <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+      </multiselect>
+      <input v-on:click.prevent="transferFilesToGoogleDrive" type="submit" class="btn btn-success btn-send" value="Transfer to Google Drive">
     </div>
     <div v-else>
       <pre>No files found...</pre>
     </div>
 
     <h3>Google Drive</h3>
+    <h5>Select files below to be transferred.</h5>
     <!--<pre id="content"></pre>-->
     <div id="google_content" v-if="google_files.length != 0">
-      <select multiple class="form-control" id="googleFilesList">
+      <!--<select multiple class="form-control" id="googleFilesList">
         <option v-for="file in google_files" v-bind:value="file.id">{{file.name}}</option>
-      </select>
+      </select>-->
+      <multiselect v-model="value" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files" label="name" track-by="name">
+        <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+      </multiselect>
+      <input v-on:click.prevent="transferFilesToDropbox" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
     </div>
     <div v-else>
       <pre>No files found...</pre>
     </div>
-    <button ref="googleAuthButton" style="display: none;">Authorize</button>
-    <button ref="googleSignoutButton" style="display: none;">Sign Out</button>
 
   </div>
 
@@ -39,11 +51,13 @@
 <script>
 import Dropbox from 'dropbox';
 //import DropboxAuth from './DropboxAuth';
+import Multiselect from 'vue-multiselect';
 
 export default {
   name: 'home',
   components: {
     //DropboxAuth
+    Multiselect
   },
   data () {
     return {
@@ -120,10 +134,10 @@ export default {
       const vm = this;
       if (isSignedIn) {
         vm.$refs.googleAuthButton.style.display = 'none';
-        vm.$refs.googleSignoutButton.style.display = 'block';
+        vm.$refs.googleSignoutButton.style.display = 'inline';
         vm.listGoogleDriveFiles();
       } else {
-        vm.$refs.googleAuthButton.style.display = 'block';
+        vm.$refs.googleAuthButton.style.display = 'inline';
         vm.$refs.googleSignoutButton.style.display = 'none';
       }
     },
@@ -173,6 +187,9 @@ export default {
       });
     }
   },
+  transferFilesToGoogleDrive: function () {
+
+  },
   computed: {
   },
   mounted: function () {
@@ -204,6 +221,22 @@ a {
 }
 
 select {
-  height: 200px;
+  height: 150px;
 }
+
+.selected {
+  background-color: lightgreen;
+  margin: 5px;
+  padding: 5px;
+  border-radius: 5px;
+}
+
+i {
+  padding-left: 10px;
+}
+
+multiselect {
+  padding: 20px;
+}
+
 </style>
