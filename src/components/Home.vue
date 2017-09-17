@@ -156,6 +156,7 @@ export default {
     listGoogleDriveFiles: function () {
       const vm = this;
       gapi.client.drive.files.list({
+        'q': "'root' in parents",
         'fields': "nextPageToken, files(id, name)"
       }).then(function(response) {
         //vm.appendPre('Files:');
