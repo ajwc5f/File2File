@@ -15,15 +15,11 @@
         <button ref="googleSignoutButton" class="btn btn-danger" style="display: none;">Sign Out of Google Drive</button>
       </div>
       <h3>Dropbox</h3>
-      <h5>Select files below to be transferred.</h5>
       <div id="dropbox_content" v-if="dropbox_files.length != 0">
-        <!--<select multiple class="form-control" id="dropboxFilesList">
-          <option v-for="file in dropbox_files" v-bind:value="file.id">{{file.name}}</option>
-        </select>-->
-        <multiselect v-model="dropbox_files_selected" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files" label="name" track-by="name">
+        <multiselect v-model="dropbox_files_selected" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files to Transfer to Google Drive" label="name" track-by="name">
           <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
         </multiselect>
-        <pre class="language-json"><code>{{ dropbox_files_selected  }}</code></pre>
+        <!--<pre class="language-json"><code>{{ dropbox_files_selected  }}</code></pre>-->
         <input v-on:click.prevent="handleDropboxToGoogleDriveTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Google Drive">
       </div>
       <div v-else>
@@ -31,17 +27,11 @@
       </div>
 
       <h3>Google Drive</h3>
-      <h5>Select files below to be transferred.</h5>
-      <!--<pre id="content"></pre>-->
       <div id="google_content" v-if="google_files.length != 0">
-        <!--<select multiple class="form-control" id="googleFilesList">
-          <option v-for="file in google_files" v-bind:value="file.id">{{file.name}}</option>
-        </select>-->
-        <multiselect v-model="google_files_selected" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files" label="name" track-by="name">
+        <multiselect v-model="google_files_selected" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files to Transfer to Dropbox" label="name" track-by="name">
           <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
         </multiselect>
-        <pre class="language-json"><code>{{ google_files_selected  }}</code></pre>
-        <input v-on:click.prevent="transferFilesToDropbox" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
+        <input v-on:click.prevent="handleGoogleDriveToDropboxTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
       </div>
       <div v-else>
         <pre>No files found...</pre>
@@ -196,7 +186,7 @@ export default {
       });
     },
     /**
-    * Ensure that transfer can occur, and then transfer files.
+    * Ensure that transfer can occur, and then transfer files to Google Drive.
     */
     handleDropboxToGoogleDriveTransfer: function () {
       const vm = this;
@@ -283,6 +273,61 @@ export default {
           .catch(function(error) {
             console.error(error);
           });
+      }
+    },
+    /**
+    * Ensure that transfer can occur, and then transfer files to Dropbox.
+    */
+    handleGoogleDriveToDropboxTransfer: function () {
+      const vm = this;
+      var num_files = vm.google_files_selected.length;
+      if (num_files == 0) {
+        console.log("No files selected to transfer.")
+        return;
+      }
+      else {
+        vm.transferFilesToDropbox();
+      }
+    },
+    /**
+    * Download from Google Drive the files that will be transferred,
+    * upload each file to Dropbox, then delete the files from
+    * Google Drive.
+    */
+    transferFilesToDropbox: function () {
+      const vm = this;
+      var num_files = vm.google_files_selected.length;
+      for (var i = 0; i < num_files; i++) {
+        const selected_file_id = vm.google_files_selected[i].id;
+        const selected_file_name = vm.google_files_selected[i].name;
+        var request = gapi.client.request({
+          'path': '/drive/v3/files/' + selected_file_id,
+          'method': 'GET',
+          'params': {'alt': 'media'}
+        });
+        request.then(function(file) {
+          var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+          dbx.filesUpload({path: '/' + selected_file_name, contents: file.body})
+            .then(function(response) {
+              console.log(response);
+              var request = gapi.client.request({
+                'path': '/drive/v3/files/' + selected_file_id,
+                'method': 'DELETE'
+              });
+              request.then(function(response) {
+                console.log(response);
+              })
+              .catch(function(error) {
+                console.log(error);
+              });
+            })
+            .catch(function(error) {
+              console.error(error);
+            });
+        })
+        .catch(function(error){
+          console.log(error);
+        });
       }
     }
   },
