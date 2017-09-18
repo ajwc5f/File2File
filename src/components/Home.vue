@@ -1,12 +1,5 @@
 <template>
   <div class="home">
-    <!--<div v-if="!dropboxAccessToken">
-      <DropboxAuth v-bind:dropbox_client_id="dropbox_client_id" v-on:dropboxAuthenticated="dropboxAuthenticated"></DropboxAuth>
-      <router-link to="/dropboxauth">Dropbox Authentication page</router-link>
-    </div>
-    <div v-else>
-      <p>Authenticated</p>
-    </div>-->
     <h1>File2File</h1>
     <p class="lead">Dropbox and Google Drive file transferring.</p>
       <div class="authArea">
@@ -51,18 +44,15 @@
 
 <script>
 import Dropbox from 'dropbox';
-//import DropboxAuth from './DropboxAuth';
 import Multiselect from 'vue-multiselect';
 
 export default {
   name: 'home',
   components: {
-    //DropboxAuth
     Multiselect
   },
   data () {
     return {
-      //isDropboxAuthenticated: false
       dropbox_client_id: 'xa0607rzubdwd51',
       dropbox_access_token: '',
       dropbox_files: [],
@@ -121,7 +111,7 @@ export default {
     isAuthenticated: function () {
       return !!this.getAccessTokenFromUrl();
     },
-    // This example keeps both the authenticate and non-authenticated setions
+    // This example keeps both the authenticated and non-authenticated sections
     // in the DOM and uses this function to show/hide the correct section.
     showPageSection: function (elementId) {
       document.getElementById(elementId).style.display = 'inline';
@@ -252,16 +242,12 @@ export default {
         'q': "'root' in parents and trashed = false",
         'fields': "nextPageToken, files(id, name, mimeType, size)"
       }).then(function(response) {
-        //vm.appendPre('Files:');
         var files = response.result.files;
         if (files && files.length > 0) {
           for (var i = 0; i < files.length; i++) {
             var file = files[i];
-            //vm.appendPre(file.name + ' (' + file.id + ')');
             vm.google_files.push(file);
           }
-        } else {
-          //vm.appendPre('No files found.');
         }
       });
     },
@@ -415,9 +401,9 @@ export default {
         }
         if (selected_file_mimeType == 'application/vnd.google-apps.folder') {
           var folder_path = selected_file_name + '/';
-          //vm.feedback = 'There is currently a bug in the script for tranferring folders from Google Drive to Dropbox, casuing some files to not get transferred.';
-          vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
-          //vm.transferScreen = false;
+          vm.feedback = 'There is currently a bug in the script for tranferring folders from Google Drive to Dropbox, casuing some files to not get transferred.';
+          //vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
+          vm.transferScreen = false;
           return;
         }
         var request = gapi.client.request({
@@ -628,11 +614,16 @@ export default {
     * however Google Drive does not support paths in its API, thus making it very
     * difficult to traverse and create a folder tree.
     */
-    transferDropboxFolderContents: function (older_path) {
+    transfesdfrDropboxFolderContents: function (older_path) {
       //Implementation will be added here
     },
+    /**
+    * Split the file into 1MB chunks and return the chunked parts
+    * PARAMS:
+    *   file -> the file to be chunked
+    */
     filechunker: function (file) {
-    	var chunkSize = 1000000; //1mb roughly
+    	var chunkSize = 1000000; //1MB roughly
     	var fileSize = file.size;
     	var chunks = Math.ceil(file.size/chunkSize,chunkSize);
     	var chunk = 0;
@@ -646,6 +637,14 @@ export default {
       console.log('file is chunked');
     	return fileparts;
     },
+    /**
+    * Check if the file counter is equal to the number of files to be transferred,
+    * to determine if transferring is complete.
+    * PARAMS:
+    *   file_counter -> how many files have been transferred
+    *   num_files -> how many total files need to be transferred
+    *   dest -> the cloud storage provider where the files are going
+    */
     checkTransferComplete: function (file_counter, num_files, dest) {
       const vm = this;
       if (file_counter == num_files) {
@@ -663,8 +662,6 @@ export default {
         }, 3000);
       }
     }
-  },
-  computed: {
   },
   mounted: function () {
     const vm = this;
