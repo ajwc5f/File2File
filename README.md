@@ -1,6 +1,3 @@
-# IN-DEPTH DOCUMENTATION WILL BE ADDED UPON COMPLETION. 
-### This will include an explanation of all methodology, overall approach, and architecture - as well as more explanation into the functions and their purposes.
-
 # file2file
 
 > Transfer items between Dropbox and Google Drive.
@@ -20,3 +17,5 @@ npm run build
 # build for production and view the bundle analyzer report
 npm run build --report
 ```
+# IN-DEPTH DOCUMENTATION WILL BE ADDED UPON COMPLETION. 
+### This will include an explanation of all methodology, overall approach, and architecture - as well as more explanation into the functions and their purposes.
