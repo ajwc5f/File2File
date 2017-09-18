@@ -349,6 +349,268 @@ Finally, the last steps in transferring the files are to send the Google Drive C
 ```
 
 ### Google Drive to Dropbox File/Folder Transfer
+Transferring Files from Google Drive to Dropbox is very similar as the vice versa approach shown above, including downloading a file from Google Drive, uploading the contents of the file to Dropbox, and deleting the file from Google Drive and it has been uploaded.
+Below, I again find the number of files to transfer, setup a file counter, check for file size, and if it is a folder.
+```
+      var num_files = vm.google_files_selected.length;
+      var file_counter = 0;
 
-# IN-DEPTH DOCUMENTATION WILL BE ADDED UPON COMPLETION. 
-### This will include an explanation of all methodology, overall approach, and architecture - as well as more explanation into the functions and their purposes.
+      for (var i = 0; i < num_files; i++) {
+        const selected_file_id = vm.google_files_selected[i].id;
+        const selected_file_name = vm.google_files_selected[i].name;
+        const selected_file_mimeType = vm.google_files_selected[i].mimeType;
+        if (vm.google_files_selected[i].size > 75000000) {
+          console.log('Files over 75MB cannot be transferred.');
+          vm.feedback = 'Files over 75MB cannot currently be transferred';
+          return;
+        }
+        if (selected_file_mimeType == 'application/vnd.google-apps.folder') {
+          var folder_path = selected_file_name + '/';
+          vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
+          return;
+        }    
+```
+However, in this implementation, if the file is a folder -> I attempt to transfer it's folder free to Dropbox, as Dropbox supports the uploading based off paths, making the approach much simpiler. That being said, there are issues with the rate limit of uploads that Dropbox accepts, and due to the recursion in the function below, I am firing off requests fast enough that on some upload requests, Dropbox will respond with an 'Error 429: too_many_write_operations', and thus some of the items in the folder tree do not get transferred and are still present on Google Drive.
+```
+    * Recursively handles the transferring of folders from Google Drive to Dropbox.
+    * PARAMS:
+    *   folder_id -> the id of the folder being transferred.
+    *   folder_path -> the path for the folder being transferred.
+    */
+    transferGoogleDriveFolderContents: function (folder_id, folder_path) {
+      const vm = this;
+      const f_path = folder_path;
+      var query = "'" + folder_id + "' in parents and trashed = false";
+      gapi.client.drive.files.list({
+        'q': query,
+        'fields': "nextPageToken, files(id, name, mimeType)"
+      }).then(function(response) {
+          const folder_content = response.result.files;
+          var num_files = folder_content.length;
+          
+          for (var i = 0; i < num_files; i++) {
+            const curr_item = folder_content[i];
+            setTimeout(function() {
+              if (curr_item.mimeType == 'application/vnd.google-apps.folder') {
+                var path = f_path + curr_item.name + '/';
+                vm.transferGoogleDriveFolderContents(curr_item.id, path);
+              }
+              else {
+                var request = gapi.client.request({
+                  'path': '/drive/v3/files/' + curr_item.id,
+                  'method': 'GET',
+                  'params': {'alt': 'media'}
+                });
+                request.then(function(file) {
+                  setTimeout(function() {
+                    var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+                    setTimeout(function() {
+                      dbx.filesUpload({path: '/' + f_path + curr_item.name, contents: file.body})
+                        .then(function(response) {
+                          console.log(response);
+                          var request = gapi.client.request({
+                            'path': '/drive/v3/files/' + curr_item.id,
+                            'method': 'DELETE'
+                          });
+                          request.then(function(response) {
+                            console.log(response);
+                          })
+                          .catch(function(error) {
+                            console.log(error);
+                          });
+                        })
+                        .catch(function(error) {
+                          console.error(error);
+                        });
+                      }, 3000);
+                    }, 3000);
+                })
+                .catch(function(error){
+                  console.log(error);
+                });
+              }
+            }, 3000);
+          }
+        })
+        .catch(function(error) {
+          console.log(error);
+          return;
+        });
+      }
+```
+As can be seen in the function above, using the id and path of the folder to be transferred, I attempt to iterate through the folder tree recursively, and upload the items to Dropbox and delete the items Google Drive as I go. I believe that a solution to the issue of rate limit on uploads would be to either implement threads as a way to upload different files concurrently, or to do it purely asyncronously - downloading, uploading, and deleting a single item at a time, which would prove hard in a recursive function.
+
+In addition to the implementation of folder transferring, for Google Drive to Dropbox, I also attempted to allow transfers of items over 75MB using upload sessions that are offered by Dropbox, where I offset the contents of the file and upload them in sessions. This method is actually successful, but causes so much slow down in the run time - to the point of freezing the browser - and thus I commented out the implementation. Here is that function below:
+```
+        var request = gapi.client.request({
+          'path': '/drive/v3/files/' + selected_file_id,
+          'method': 'GET',
+          'params': {'alt': 'media'}
+        });
+        request.then(function(file) {
+          /*if ( file.size > 75000000) {
+            console.log("Over 75MB");
+            //file over 75mb go break it into parts and come back
+            var fileparts = filechunker(file);
+            var fileoffset = 0;
+
+            dbx.filesUploadSessionStart({
+              contents: fileparts[0],
+              close: false,
+            })
+            .then(function (response) {
+              console.log(response);
+              var fileid = response;
+              fileoffset = fileoffset+fileparts[0].size;
+
+              if (fileparts.length > 2) {
+                //need to do the file append recursively calling it one at a time
+                var fileappends = function (startkey) {
+                  var endkey = fileparts.length-2;
+
+                  dbx.filesUploadSessionAppend({
+                    contents: fileparts[startkey],
+                    offset: startkey*1000000,
+                    session_id: fileid.session_id
+                  })
+                  .then(function(response){
+                    console.log(response);
+                    //we have done all of them so return
+                    if (startkey == endkey) {
+                      filefinish();
+                      return 'complete';
+                    }
+                    else{
+                      return fileappends(startkey+1);
+                    }
+                  })
+                  .catch(function (error) {
+                    console.log(error, 'on append');
+                  });
+                }
+                //this starts recursively uploading the parts
+                fileappends(1);
+              }
+              else {
+                filefinish();
+              }
+
+              //if all fileappends are done run the finish
+              var filefinish = function () {
+                dbx.filesUploadSessionFinish({
+                  contents: fileparts[(fileparts.length-1)],
+                  cursor: {
+                    session_id: fileid.session_id,
+                    offset: (fileparts.length-1)*1000000
+                  },
+                  commit: {
+                    path: '/' + file.name,
+                    mode: 'overwrite'
+                  }
+                })
+                .then(function (response) {
+                  console.log(response);
+                  //get the sharing link of the file that was uploaded.
+                  dbx.sharingCreateSharedLink({ path : response.path_display })
+                  .then(function(response){
+                    var request = gapi.client.request({
+                      'path': '/drive/v3/files/' + selected_file_id,
+                      'method': 'DELETE'
+                    });
+                    request.then(function(response) {
+                      console.log(response);
+                      file_counter++;
+                      vm.checkTransferComplete(file_counter, num_files, 'dropbox');
+                    })
+                    .catch(function(error) {
+                      console.log(error);
+                    });
+                  })
+                  .catch(function(error) {
+
+                  });
+                })
+                .catch(function (error) {
+                  console.log(error);
+                });
+              }
+            })
+            .catch(function (error) {
+              console.log(error);
+            });
+          }
+```
+
+Aside from these two additions, transferring from Google Drive to Dropbox is almost the same as the vice versa way, as mentioned before and the code is relatively easy to follow. Here is the function for that below.
+```
+    /**
+    * Download from Google Drive the files that will be transferred,
+    * upload each file to Dropbox, then delete the files from
+    * Google Drive.
+    */
+    transferFilesToDropbox: function () {
+      const vm = this;
+      vm.transferScreen = true;
+      var num_files = vm.google_files_selected.length;
+      var file_counter = 0;
+
+      for (var i = 0; i < num_files; i++) {
+        const selected_file_id = vm.google_files_selected[i].id;
+        const selected_file_name = vm.google_files_selected[i].name;
+        const selected_file_mimeType = vm.google_files_selected[i].mimeType;
+        if (vm.google_files_selected[i].size > 75000000) {
+          console.log('Files over 75MB cannot be transferred.');
+          vm.feedback = 'Files over 75MB cannot currently be transferred';
+          return;
+        }
+        if (selected_file_mimeType == 'application/vnd.google-apps.folder') {
+          var folder_path = selected_file_name + '/';
+          vm.feedback = 'There is currently a bug in the script for tranferring folders from Google Drive to Dropbox, casuing some files to not get transferred.';
+          //vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
+          vm.transferScreen = false;
+          return;
+        }
+        var request = gapi.client.request({
+          'path': '/drive/v3/files/' + selected_file_id,
+          'method': 'GET',
+          'params': {'alt': 'media'}
+        });
+        request.then(function(file) {
+            var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+            dbx.filesUpload({path: '/' + selected_file_name, contents: file.body})
+              .then(function(response) {
+                console.log(response);
+                var request = gapi.client.request({
+                  'path': '/drive/v3/files/' + selected_file_id,
+                  'method': 'DELETE'
+                });
+                request.then(function(response) {
+                  console.log(response);
+                  file_counter++;
+                  vm.checkTransferComplete(file_counter, num_files, 'dropbox');
+                })
+                .catch(function(error) {
+                  console.log(error);
+                  console.log(error);
+                  vm.feedback = 'There was an error deleting a file from Google Drive.';
+                  vm.transferScreen = false;
+                  return;
+                });
+              })
+              .catch(function(error) {
+                console.error(error);
+                console.log(error);
+                vm.feedback = 'There was an error uploading a file to Dropbox.';
+                vm.transferScreen = false;
+                return;
+              });
+        })
+        .catch(function(error){
+          console.log(error);
+          console.log(error);
+          vm.feedback = 'There was an error downloading a file from Google Drive.';
+          vm.transferScreen = false;
+          return;
+        });
+      }
+```
