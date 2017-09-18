@@ -9,16 +9,19 @@
     </div>-->
     <h1>File2File</h1>
     <p class="lead">Dropbox and Google Drive file transferring.</p>
-    <div v-if="!transferScreen">
       <div class="authArea">
         <button ref="googleAuthButton" class="btn btn-primary" style="display: none;">Authorize Google Drive</button>
         <button ref="googleSignoutButton" class="btn btn-danger" style="display: none;">Sign Out of Google Drive</button>
+
+        <div id="pre-auth-section" style="display: none;" class="btn btn-primary"><a href="" id="authlink">Authenticate Dropbox</a></div>
+        <button id="authed-section" style="display: none;" class="btn btn-danger" v-on:click="signoutDropbox">Sign Out of Dropbox</button>
       </div>
+      <div v-if="!transferScreen">
       <h5 class="text-danger">{{ feedback }}</h5>
       <h3>Dropbox</h3>
       <div id="dropbox_content" v-if="dropbox_files.length != 0">
         <multiselect v-model="dropbox_files_selected" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files to Transfer to Google Drive" label="name" track-by="name">
-          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }} -- {{ Math.ceil(props.option.size / 1000000) }} MB</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }} -- {{ Math.ceil(props.option.size / 1000000) }} MB -- {{ props.option[".tag"] }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
         </multiselect>
         <!--<pre class="language-json"><code>{{ dropbox_files_selected  }}</code></pre>-->
         <input v-on:click.prevent="handleDropboxToGoogleDriveTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Google Drive">
@@ -61,7 +64,7 @@ export default {
     return {
       //isDropboxAuthenticated: false
       dropbox_client_id: 'xa0607rzubdwd51',
-      dropbox_access_token: 'jVKh7pPwvkAAAAAAAAAAXuDLbBvlcoDZDGn4NOHMUkfDnI_peEehAQl8HtM904xh',
+      dropbox_access_token: '',
       dropbox_files: [],
       dropbox_files_selected: [],
       google_api_key: 'AIzaSyBrRmcI2qfeSRdY1_jASGMoycHkgFb4pJk',
@@ -76,21 +79,82 @@ export default {
     }
   },
   methods: {
+    parseQueryString: function(str) {
+      var ret = Object.create(null);
+
+      if (typeof str !== 'string') {
+        return ret;
+      }
+
+      str = str.trim().replace(/^(\?|#|&)/, '');
+
+      if (!str) {
+        return ret;
+      }
+
+      str.split('&').forEach(function (param) {
+        var parts = param.replace(/\+/g, ' ').split('=');
+        var key = parts.shift();
+        var val = parts.length > 0 ? parts.join('=') : undefined;
+
+        key = decodeURIComponent(key);
+
+        val = val === undefined ? null : decodeURIComponent(val);
+
+        if (ret[key] === undefined) {
+          ret[key] = val;
+        } else if (Array.isArray(ret[key])) {
+          ret[key].push(val);
+        } else {
+          ret[key] = [ret[key], val];
+        }
+      });
+
+      return ret;
+    },
+    // Parses the url and gets the access token if it is in the urls hash
+    getAccessTokenFromUrl: function () {
+      return this.parseQueryString(window.location.hash).access_token;
+    },
+    // If the user was just redirected from authenticating, the urls hash will
+    // contain the access token.
+    isAuthenticated: function () {
+      return !!this.getAccessTokenFromUrl();
+    },
+    // This example keeps both the authenticate and non-authenticated setions
+    // in the DOM and uses this function to show/hide the correct section.
+    showPageSection: function (elementId) {
+      document.getElementById(elementId).style.display = 'inline';
+    },
     /**
     * Create new Dropbox instance and list files that are in the root of user's Dropbox.
     */
     getDropboxFilesList: function () {
       const vm = this;
-      console.log("here");
-      var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
-      dbx.filesListFolder({path: ''})
-      .then(function(response) {
-        console.log(response);
-        vm.renderDropboxItems(response.entries);
-      })
-      .catch(function(error) {
-        console.error(error);
-      });
+      if (vm.isAuthenticated()) {
+        vm.showPageSection('authed-section');
+        // Create an instance of Dropbox with the access token and use it to
+        // fetch and render the files in the users root directory.
+        vm.dropbox_access_token = vm.getAccessTokenFromUrl();
+
+        var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+        dbx.filesListFolder({path: ''})
+        .then(function(response) {
+          vm.renderDropboxItems(response.entries);
+          //vm.$emit('dropboxAuthenticated', vm.dropbox_access);
+          console.log(vm.dropbox_access_token);
+        })
+        .catch(function(error) {
+          console.error(error);
+        });
+      }
+      else {
+        vm.showPageSection('pre-auth-section');
+        // Set the login anchors href using dbx.getAuthenticationUrl()
+        var dbx = new Dropbox({ clientId: vm.dropbox_client_id });
+        var authUrl = dbx.getAuthenticationUrl('http://localhost:8080/');
+        document.getElementById('authlink').href = authUrl;
+      }
     },
     /**
     * Add Dropbox items to an object.
@@ -103,6 +167,9 @@ export default {
       items.forEach(function(item) {
         vm.dropbox_files.push(item);
       });
+    },
+    signoutDropbox: function () {
+      window.location.replace('http://localhost:8080/');
     },
     /**
     * Load the Google Drive auth2 library and API client library.
@@ -232,6 +299,11 @@ export default {
           vm.transferScreen = false;
           return;
         }
+        if (vm.dropbox_files_selected[i][".tag"] == 'folder') {
+          vm.feedback = 'Folders cannot currently be transferred from Dropbox to Google Drive.';
+          vm.transferScreen = false;
+          return;
+        }
         var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
         const selected_dropbox_file_path = vm.dropbox_files_selected[i].path_display;
         dbx.filesDownload({path: selected_dropbox_file_path})
@@ -343,7 +415,9 @@ export default {
         }
         if (selected_file_mimeType == 'application/vnd.google-apps.folder') {
           var folder_path = selected_file_name + '/';
+          //vm.feedback = 'There is currently a bug in the script for tranferring folders from Google Drive to Dropbox, casuing some files to not get transferred.';
           vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
+          //vm.transferScreen = false;
           return;
         }
         var request = gapi.client.request({
@@ -549,6 +623,14 @@ export default {
           return;
         });
     },
+    /**
+    * GOAL: To recursively handle transferring on folders from Dropbox to Google Drive,
+    * however Google Drive does not support paths in its API, thus making it very
+    * difficult to traverse and create a folder tree.
+    */
+    transferDropboxFolderContents: function (older_path) {
+      //Implementation will be added here
+    },
     filechunker: function (file) {
     	var chunkSize = 1000000; //1mb roughly
     	var fileSize = file.size;
@@ -577,6 +659,7 @@ export default {
         }
         setTimeout(function () {
           vm.transferScreen = false;
+          vm.feedback = num_files + ' files were transferred successfully.'
         }, 3000);
       }
     }
@@ -584,9 +667,9 @@ export default {
   computed: {
   },
   mounted: function () {
-    const vm = this
-    vm.getDropboxFilesList();
+    const vm = this;
     vm.handleGoogleDriveClientLoad();
+    vm.getDropboxFilesList();
   }
 }
 </script>
@@ -608,7 +691,8 @@ li {
 }
 
 a {
-  color: #42b983;
+  color: #fff;
+  text-decoration: none;
 }
 
 select {
