@@ -31,6 +31,7 @@
         <multiselect v-model="google_files_selected" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files to Transfer to Dropbox" label="name" track-by="name">
           <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
         </multiselect>
+        <pre class="language-json"><code>{{ google_files_selected  }}</code></pre>
         <input v-on:click.prevent="handleGoogleDriveToDropboxTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
       </div>
       <div v-else>
@@ -90,6 +91,8 @@ export default {
     },
     /**
     * Add Dropbox items to an object.
+    * PARAMS:
+    *   items -> the list of items to be rendered
     */
     renderDropboxItems: function (items) {
       const vm = this;
@@ -128,6 +131,8 @@ export default {
     /**
     * Update the UI appropriately based on sign-in state. After a sign-in, the
     * Google Drive API is called to display a list of user files.
+    * PARAMS:
+    *   isSignedIn -> boolean of whether or not the user is already signed into Google Drive
     */
     updateGoogleDriveSigninStatus: function (isSignedIn) {
       const vm = this;
@@ -157,6 +162,8 @@ export default {
     /**
     * Append a pre element to the body containing the given message
     * as its text node. Used to display the results of the Google Drive API call.
+    * PARAMS:
+    *   message -> the message to be appended.
     */
     appendPre: function (message) {
       var pre = document.getElementById('content');
@@ -170,7 +177,7 @@ export default {
       const vm = this;
       gapi.client.drive.files.list({
         'q': "'root' in parents and trashed = false",
-        'fields': "nextPageToken, files(id, name)"
+        'fields': "nextPageToken, files(id, name, mimeType)"
       }).then(function(response) {
         //vm.appendPre('Files:');
         var files = response.result.files;
@@ -300,6 +307,12 @@ export default {
       for (var i = 0; i < num_files; i++) {
         const selected_file_id = vm.google_files_selected[i].id;
         const selected_file_name = vm.google_files_selected[i].name;
+        const selected_file_mimeType = vm.google_files_selected[i].mimeType;
+        if (selected_file_mimeType == 'application/vnd.google-apps.folder') {
+          var folder_path = selected_file_name + '/';
+          vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
+          return;
+        }
         var request = gapi.client.request({
           'path': '/drive/v3/files/' + selected_file_id,
           'method': 'GET',
@@ -329,6 +342,72 @@ export default {
           console.log(error);
         });
       }
+    },
+    /**
+    * Recursively handles the transferring of folders from Google Drive to Dropbox.
+    * PARAMS:
+    *   folder_id -> the id of the folder being transferred.
+    *   folder_path -> the path for the folder being transferred.
+    */
+    transferGoogleDriveFolderContents: function (folder_id, folder_path) {
+      const vm = this;
+      const f_path = folder_path;
+      var query = "'" + folder_id + "' in parents and trashed = false";
+      gapi.client.drive.files.list({
+        'q': query,
+        'fields': "nextPageToken, files(id, name, mimeType)"
+      }).then(function(response) {
+          //console.log(response.body);
+          const folder_content = response.result.files;
+          var num_files = folder_content.length;
+          for (var i = 0; i < num_files; i++) {
+            const curr_item = folder_content[i];
+            setTimeout(function() {
+              if (curr_item.mimeType == 'application/vnd.google-apps.folder') {
+                var path = f_path + curr_item.name + '/';
+                vm.transferGoogleDriveFolderContents(curr_item.id, path);
+              }
+              else {
+                var request = gapi.client.request({
+                  'path': '/drive/v3/files/' + curr_item.id,
+                  'method': 'GET',
+                  'params': {'alt': 'media'}
+                });
+                request.then(function(file) {
+                  setTimeout(function() {
+                    var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+                    setTimeout(function() {
+                      dbx.filesUpload({path: '/' + f_path + curr_item.name, contents: file.body})
+                        .then(function(response) {
+                          console.log(response);
+                          var request = gapi.client.request({
+                            'path': '/drive/v3/files/' + curr_item.id,
+                            'method': 'DELETE'
+                          });
+                          request.then(function(response) {
+                            console.log(response);
+                          })
+                          .catch(function(error) {
+                            console.log(error);
+                          });
+                        })
+                        .catch(function(error) {
+                          console.error(error);
+                        });
+                      }, 3000);
+                    }, 3000);
+                })
+                .catch(function(error){
+                  console.log(error);
+                });
+              }
+            }, 3000);
+          }
+        })
+        .catch(function(error) {
+          console.log(error);
+          return;
+        });
     }
   },
   computed: {
