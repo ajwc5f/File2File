@@ -24,6 +24,8 @@ npm run build
 npm run build --report
 ```
 
+I suggest cloning or downloading and then running npm install -> npm run dev -> and then visting 'http://localhost:8080' to run the application locally.
+
 ## Approach
  - Conduct OAuth login for Dropbox and Google Drive to allow users to have access to thier Dropbox and Google Drive contents.
  - Show a list of items (files and folders) in the root directory of both Dropbox and Google Drive.
