@@ -1,3 +1,5 @@
+# IN-DEPTH DOCUMENTATION WILL BE ADDED UPON COMPLETION. This will give an explanation of all methodology, overall approach, and architecture - as well as more explanation into the functions and their purposes.
+
 # file2file
 
 > Transfer items between Dropbox and Google Drive.
