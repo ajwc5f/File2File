@@ -8,6 +8,7 @@ A Web application to transfer items between Dropbox and Google Drive. Focusing o
 - Npm
 - Dropbox V2 Api
 - Google Drive V2/V3 Api
+- Bootstrap
 
 ## Build Setup
 ``` bash
@@ -616,3 +617,10 @@ Aside from these two additions, transferring from Google Drive to Dropbox is alm
         });
       }
 ```
+
+## Potential TO-DOs
+1. Create algorithm to make and maintain a file tree based off of file ids for folder transfer from Dropbox to Google Drive.
+2. Investigate issues with folder transfer from Google Drive to Dropbox, and potentially introduce threads or a version of total asynchronous handling.
+3. Find a way around large file transferring, in order to not slow the browset to a stand still.
+4. Improve the UI.
+5. Add more cloud storage providers.
