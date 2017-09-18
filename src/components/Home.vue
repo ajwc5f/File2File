@@ -9,43 +9,49 @@
     </div>-->
     <h1>File2File</h1>
     <p class="lead">Dropbox and Google Drive file transferring.</p>
-    <div class="authArea">
-      <button ref="googleAuthButton" class="btn btn-primary" style="display: none;">Authorize Google Drive</button>
-      <button ref="googleSignoutButton" class="btn btn-danger" style="display: none;">Sign Out of Google Drive</button>
-    </div>
-    <h3>Dropbox</h3>
-    <h5>Select files below to be transferred.</h5>
-    <div id="dropbox_content" v-if="dropbox_files.length != 0">
-      <!--<select multiple class="form-control" id="dropboxFilesList">
-        <option v-for="file in dropbox_files" v-bind:value="file.id">{{file.name}}</option>
-      </select>-->
-      <multiselect v-model="value" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files" label="name" track-by="name">
-        <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
-      </multiselect>
-      <input v-on:click.prevent="transferFilesToGoogleDrive" type="submit" class="btn btn-success btn-send" value="Transfer to Google Drive">
+    <div v-if="!transferScreen">
+      <div class="authArea">
+        <button ref="googleAuthButton" class="btn btn-primary" style="display: none;">Authorize Google Drive</button>
+        <button ref="googleSignoutButton" class="btn btn-danger" style="display: none;">Sign Out of Google Drive</button>
+      </div>
+      <h3>Dropbox</h3>
+      <h5>Select files below to be transferred.</h5>
+      <div id="dropbox_content" v-if="dropbox_files.length != 0">
+        <!--<select multiple class="form-control" id="dropboxFilesList">
+          <option v-for="file in dropbox_files" v-bind:value="file.id">{{file.name}}</option>
+        </select>-->
+        <multiselect v-model="dropbox_files_selected" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files" label="name" track-by="name">
+          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+        </multiselect>
+        <pre class="language-json"><code>{{ dropbox_files_selected  }}</code></pre>
+        <input v-on:click.prevent="handleDropboxToGoogleDriveTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Google Drive">
+      </div>
+      <div v-else>
+        <pre>No files found...</pre>
+      </div>
+
+      <h3>Google Drive</h3>
+      <h5>Select files below to be transferred.</h5>
+      <!--<pre id="content"></pre>-->
+      <div id="google_content" v-if="google_files.length != 0">
+        <!--<select multiple class="form-control" id="googleFilesList">
+          <option v-for="file in google_files" v-bind:value="file.id">{{file.name}}</option>
+        </select>-->
+        <multiselect v-model="google_files_selected" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files" label="name" track-by="name">
+          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+        </multiselect>
+        <pre class="language-json"><code>{{ google_files_selected  }}</code></pre>
+        <input v-on:click.prevent="transferFilesToDropbox" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
+      </div>
+      <div v-else>
+        <pre>No files found...</pre>
+      </div>
     </div>
     <div v-else>
-      <pre>No files found...</pre>
+      <h3 class="text-success">Transferring Files. Please wait...</h3>
+      <div id="results" style="margin-top: 30px"></div>
     </div>
-
-    <h3>Google Drive</h3>
-    <h5>Select files below to be transferred.</h5>
-    <!--<pre id="content"></pre>-->
-    <div id="google_content" v-if="google_files.length != 0">
-      <!--<select multiple class="form-control" id="googleFilesList">
-        <option v-for="file in google_files" v-bind:value="file.id">{{file.name}}</option>
-      </select>-->
-      <multiselect v-model="value" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files" label="name" track-by="name">
-        <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
-      </multiselect>
-      <input v-on:click.prevent="transferFilesToDropbox" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
-    </div>
-    <div v-else>
-      <pre>No files found...</pre>
-    </div>
-
   </div>
-
 </template>
 
 <script>
@@ -65,12 +71,15 @@ export default {
       dropbox_client_id: 'xa0607rzubdwd51',
       dropbox_access_token: 'jVKh7pPwvkAAAAAAAAAAXuDLbBvlcoDZDGn4NOHMUkfDnI_peEehAQl8HtM904xh',
       dropbox_files: [],
+      dropbox_files_selected: [],
       google_api_key: 'AIzaSyBrRmcI2qfeSRdY1_jASGMoycHkgFb4pJk',
       google_client_id: '440978199699-hs9naleoo51g7e10qpcto3a93c46jcht.apps.googleusercontent.com',
       //Discovery docs and authorization scopes required by the Google Drive API
       google_discovery_docs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
-      google_scope: 'https://www.googleapis.com/auth/drive.metadata.readonly',
-      google_files: []
+      google_scope: 'https://www.googleapis.com/auth/drive',
+      google_files: [],
+      google_files_selected: [],
+      transferScreen: false
     }
   },
   methods: {
@@ -170,7 +179,7 @@ export default {
     listGoogleDriveFiles: function () {
       const vm = this;
       gapi.client.drive.files.list({
-        'q': "'root' in parents",
+        'q': "'root' in parents and trashed = false",
         'fields': "nextPageToken, files(id, name)"
       }).then(function(response) {
         //vm.appendPre('Files:');
@@ -185,10 +194,97 @@ export default {
           //vm.appendPre('No files found.');
         }
       });
-    }
-  },
-  transferFilesToGoogleDrive: function () {
+    },
+    /**
+    * Ensure that transfer can occur, and then transfer files.
+    */
+    handleDropboxToGoogleDriveTransfer: function () {
+      const vm = this;
+      var num_files = vm.dropbox_files_selected.length;
+      if (num_files == 0) {
+        console.log("No files selected to transfer.")
+        return;
+      }
+      else {
+        vm.transferFilesToGoogleDrive()
+      }
+    },
+    /**
+    * Download from Dropbox the files that will be transferred,
+    * upload each file to Google Drive, then delete the files from
+    * Dropbox.
+    */
+    transferFilesToGoogleDrive: function () {
+      const vm = this;
+      console.log("Transferring to Google Drive...");
+      var num_files = vm.dropbox_files_selected.length;
+      console.log(num_files);
+      for (var i = 0; i < num_files; i++) {
+        console.log("in for");
+        var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+        const selected_dropbox_file_path = vm.dropbox_files_selected[i].path_display;
+        dbx.filesDownload({path: selected_dropbox_file_path})
+          .then(function(response) {
+            console.log(response);
+            var blob = response.fileBlob;
 
+            var boundary = '-------314159265358979323846';
+            var delimiter = "\r\n--" + boundary + "\r\n";
+            var close_delim = "\r\n--" + boundary + "--";
+
+            var reader = new FileReader();
+            reader.readAsBinaryString(blob);
+            reader.onload = function (e) {
+              var contentType = blob.type || 'application/octet-stream';
+              var metadata = {
+                'title': response.name,
+                'mimeType': contentType,
+                "parents": [{"id":"root"}]
+              };
+
+              var base64Data = btoa(reader.result);
+              var multipartRequestBody =
+                delimiter +
+                'Content-Type: application/json\r\n\r\n' +
+                JSON.stringify(metadata) +
+                delimiter +
+                'Content-Type: ' + contentType + '\r\n' +
+                'Content-Transfer-Encoding: base64\r\n' +
+                '\r\n' +
+                base64Data +
+                close_delim;
+
+              var request = gapi.client.request({
+                'path': '/upload/drive/v2/files',
+                'method': 'POST',
+                'params': {'uploadType': 'multipart'},
+                'headers': {
+                  'Content-Type': 'multipart/mixed; boundary="' + boundary + '"'
+                },
+                'body': multipartRequestBody});
+
+              request.then(function(file) {
+                console.log("File transferred to Google Drive.")
+                console.log(file.result);
+                var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+                dbx.filesDelete({path: selected_dropbox_file_path})
+                  .then(function(response) {
+                    console.log(response);
+                  })
+                  .catch(function(error) {
+                    console.log(error);
+                  });
+              })
+              .catch(function(error){
+                console.log(error);
+              });
+            };
+          })
+          .catch(function(error) {
+            console.error(error);
+          });
+      }
+    }
   },
   computed: {
   },
