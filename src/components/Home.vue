@@ -14,10 +14,11 @@
         <button ref="googleAuthButton" class="btn btn-primary" style="display: none;">Authorize Google Drive</button>
         <button ref="googleSignoutButton" class="btn btn-danger" style="display: none;">Sign Out of Google Drive</button>
       </div>
+      <h5 class="text-danger">{{ feedback }}</h5>
       <h3>Dropbox</h3>
       <div id="dropbox_content" v-if="dropbox_files.length != 0">
         <multiselect v-model="dropbox_files_selected" :options="dropbox_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Dropbox Files to Transfer to Google Drive" label="name" track-by="name">
-          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }} -- {{ Math.ceil(props.option.size / 1000000) }} MB</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
         </multiselect>
         <!--<pre class="language-json"><code>{{ dropbox_files_selected  }}</code></pre>-->
         <input v-on:click.prevent="handleDropboxToGoogleDriveTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Google Drive">
@@ -29,9 +30,9 @@
       <h3>Google Drive</h3>
       <div id="google_content" v-if="google_files.length != 0">
         <multiselect v-model="google_files_selected" :options="google_files" :multiple="true" :close-on-select="false" :clear-on-select="false" :hide-selected="true" :preserve-search="true" placeholder="Pick Google Drive Files to Transfer to Dropbox" label="name" track-by="name">
-          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }}</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
+          <template slot="tag" scope="props"><span class="custom__tag selected"><span>{{ props.option.name }} -- {{ Math.ceil(props.option.size / 1000000) }} MB</span><span class="custom__remove" @click="props.remove(props.option)"><i class="fa fa-window-close" aria-hidden="true"></i></span></span></template>
         </multiselect>
-        <pre class="language-json"><code>{{ google_files_selected  }}</code></pre>
+        <!--<pre class="language-json"><code>{{ google_files_selected  }}</code></pre>-->
         <input v-on:click.prevent="handleGoogleDriveToDropboxTransfer" type="submit" class="btn btn-success btn-send" value="Transfer to Dropbox">
       </div>
       <div v-else>
@@ -70,7 +71,8 @@ export default {
       google_scope: 'https://www.googleapis.com/auth/drive',
       google_files: [],
       google_files_selected: [],
-      transferScreen: false
+      transferScreen: false,
+      feedback: ''
     }
   },
   methods: {
@@ -79,6 +81,7 @@ export default {
     */
     getDropboxFilesList: function () {
       const vm = this;
+      console.log("here");
       var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
       dbx.filesListFolder({path: ''})
       .then(function(response) {
@@ -96,6 +99,7 @@ export default {
     */
     renderDropboxItems: function (items) {
       const vm = this;
+      vm.dropbox_files = [];
       items.forEach(function(item) {
         vm.dropbox_files.push(item);
       });
@@ -175,9 +179,11 @@ export default {
     */
     listGoogleDriveFiles: function () {
       const vm = this;
+      vm.google_files = [];
+      console.log("here");
       gapi.client.drive.files.list({
         'q': "'root' in parents and trashed = false",
-        'fields': "nextPageToken, files(id, name, mimeType)"
+        'fields': "nextPageToken, files(id, name, mimeType, size)"
       }).then(function(response) {
         //vm.appendPre('Files:');
         var files = response.result.files;
@@ -200,6 +206,7 @@ export default {
       var num_files = vm.dropbox_files_selected.length;
       if (num_files == 0) {
         console.log("No files selected to transfer.")
+        vm.feedback = 'No files selected to transfer.';
         return;
       }
       else {
@@ -213,11 +220,18 @@ export default {
     */
     transferFilesToGoogleDrive: function () {
       const vm = this;
-      console.log("Transferring to Google Drive...");
+      vm.transferScreen = true;
       var num_files = vm.dropbox_files_selected.length;
-      console.log(num_files);
+      var file_counter = 0;
+
       for (var i = 0; i < num_files; i++) {
         console.log("in for");
+        if (vm.dropbox_files_selected[i].size > 75000000) {
+          console.log('Files over 75MB cannot be transferred.');
+          vm.feedback = 'Files over 75MB cannot currently be transferred.';
+          vm.transferScreen = false;
+          return;
+        }
         var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
         const selected_dropbox_file_path = vm.dropbox_files_selected[i].path_display;
         dbx.filesDownload({path: selected_dropbox_file_path})
@@ -266,19 +280,29 @@ export default {
                 var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
                 dbx.filesDelete({path: selected_dropbox_file_path})
                   .then(function(response) {
-                    console.log(response);
+                    file_counter++;
+                    vm.checkTransferComplete(file_counter, num_files, 'google');
                   })
                   .catch(function(error) {
                     console.log(error);
+                    vm.feedback = 'There was an error deleting a file from Dropbox.';
+                    vm.transferScreen = false;
+                    return;
                   });
               })
               .catch(function(error){
                 console.log(error);
+                vm.feedback = 'There was an error uploading a file to Google Drive.';
+                vm.transferScreen = false;
+                return;
               });
             };
           })
           .catch(function(error) {
             console.error(error);
+            vm.feedback = 'There was an error downloading a file from Dropbox.';
+            vm.transferScreen = false;
+            return;
           });
       }
     },
@@ -289,7 +313,8 @@ export default {
       const vm = this;
       var num_files = vm.google_files_selected.length;
       if (num_files == 0) {
-        console.log("No files selected to transfer.")
+        console.log("No files selected to transfer.");
+        vm.feedback = 'No files selected to transfer.';
         return;
       }
       else {
@@ -303,11 +328,19 @@ export default {
     */
     transferFilesToDropbox: function () {
       const vm = this;
+      vm.transferScreen = true;
       var num_files = vm.google_files_selected.length;
+      var file_counter = 0;
+
       for (var i = 0; i < num_files; i++) {
         const selected_file_id = vm.google_files_selected[i].id;
         const selected_file_name = vm.google_files_selected[i].name;
         const selected_file_mimeType = vm.google_files_selected[i].mimeType;
+        if (vm.google_files_selected[i].size > 75000000) {
+          console.log('Files over 75MB cannot be transferred.');
+          vm.feedback = 'Files over 75MB cannot currently be transferred';
+          return;
+        }
         if (selected_file_mimeType == 'application/vnd.google-apps.folder') {
           var folder_path = selected_file_name + '/';
           vm.transferGoogleDriveFolderContents(selected_file_id, folder_path);
@@ -319,27 +352,134 @@ export default {
           'params': {'alt': 'media'}
         });
         request.then(function(file) {
-          var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
-          dbx.filesUpload({path: '/' + selected_file_name, contents: file.body})
-            .then(function(response) {
+          /*if ( file.size > 100000000) {
+            console.log("Over 100MB");
+            //file over 100mb go break it into parts and come back
+            var fileparts = filechunker(file);
+            var fileoffset = 0;
+
+            dbx.filesUploadSessionStart({
+              contents: fileparts[0],
+              close: false,
+            })
+            .then(function (response) {
               console.log(response);
-              var request = gapi.client.request({
-                'path': '/drive/v3/files/' + selected_file_id,
-                'method': 'DELETE'
-              });
-              request.then(function(response) {
+              var fileid = response;
+              fileoffset = fileoffset+fileparts[0].size;
+
+              if (fileparts.length > 2) {
+                //need to do the file append recursively calling it one at a time
+                var fileappends = function (startkey) {
+                  var endkey = fileparts.length-2;
+
+                  dbx.filesUploadSessionAppend({
+                    contents: fileparts[startkey],
+                    offset: startkey*1000000,
+                    session_id: fileid.session_id
+                  })
+                  .then(function(response){
+                    console.log(response);
+                    //we have done all of them so return
+                    if (startkey == endkey) {
+                      filefinish();
+                      return 'complete';
+                    }
+                    else{
+                      return fileappends(startkey+1);
+                    }
+                  })
+                  .catch(function (error) {
+                    console.log(error, 'on append');
+                  });
+                }
+                //this starts recursively uploading the parts
+                fileappends(1);
+              }
+              else {
+                filefinish();
+              }
+
+              //if all fileappends are done run the finish
+              var filefinish = function () {
+                dbx.filesUploadSessionFinish({
+                  contents: fileparts[(fileparts.length-1)],
+                  cursor: {
+                    session_id: fileid.session_id,
+                    offset: (fileparts.length-1)*1000000
+                  },
+                  commit: {
+                    path: '/' + file.name,
+                    mode: 'overwrite'
+                  }
+                })
+                .then(function (response) {
+                  console.log(response);
+                  //get the sharing link of the file that was uploaded.
+                  dbx.sharingCreateSharedLink({ path : response.path_display })
+                  .then(function(response){
+                    var request = gapi.client.request({
+                      'path': '/drive/v3/files/' + selected_file_id,
+                      'method': 'DELETE'
+                    });
+                    request.then(function(response) {
+                      console.log(response);
+                      file_counter++;
+                      vm.checkTransferComplete(file_counter, num_files, 'dropbox');
+                    })
+                    .catch(function(error) {
+                      console.log(error);
+                    });
+                  })
+                  .catch(function(error) {
+
+                  });
+                })
+                .catch(function (error) {
+                  console.log(error);
+                });
+              }
+            })
+            .catch(function (error) {
+              console.log(error);
+            });
+          }
+          else {*/
+            var dbx = new Dropbox({ accessToken: vm.dropbox_access_token });
+            dbx.filesUpload({path: '/' + selected_file_name, contents: file.body})
+              .then(function(response) {
                 console.log(response);
+                var request = gapi.client.request({
+                  'path': '/drive/v3/files/' + selected_file_id,
+                  'method': 'DELETE'
+                });
+                request.then(function(response) {
+                  console.log(response);
+                  file_counter++;
+                  vm.checkTransferComplete(file_counter, num_files, 'dropbox');
+                })
+                .catch(function(error) {
+                  console.log(error);
+                  console.log(error);
+                  vm.feedback = 'There was an error deleting a file from Google Drive.';
+                  vm.transferScreen = false;
+                  return;
+                });
               })
               .catch(function(error) {
+                console.error(error);
                 console.log(error);
+                vm.feedback = 'There was an error uploading a file to Dropbox.';
+                vm.transferScreen = false;
+                return;
               });
-            })
-            .catch(function(error) {
-              console.error(error);
-            });
+          //}
         })
         .catch(function(error){
           console.log(error);
+          console.log(error);
+          vm.feedback = 'There was an error downloading a file from Google Drive.';
+          vm.transferScreen = false;
+          return;
         });
       }
     },
@@ -408,6 +548,37 @@ export default {
           console.log(error);
           return;
         });
+    },
+    filechunker: function (file) {
+    	var chunkSize = 1000000; //1mb roughly
+    	var fileSize = file.size;
+    	var chunks = Math.ceil(file.size/chunkSize,chunkSize);
+    	var chunk = 0;
+
+    	var fileparts = new Array();
+    	while (chunk < chunks) {
+    		var offset = chunk*chunkSize;
+    		fileparts[chunk] = file.slice(offset, offset + chunkSize);
+    		chunk++;
+    	}
+      console.log('file is chunked');
+    	return fileparts;
+    },
+    checkTransferComplete: function (file_counter, num_files, dest) {
+      const vm = this;
+      if (file_counter == num_files) {
+        vm.getDropboxFilesList();
+        vm.listGoogleDriveFiles();
+        if (dest == 'dropbox') {
+          vm.google_files_selected = [];
+        }
+        else if (dest == 'google'){
+          vm.dropbox_files_selected = [];
+        }
+        setTimeout(function () {
+          vm.transferScreen = false;
+        }, 3000);
+      }
     }
   },
   computed: {
